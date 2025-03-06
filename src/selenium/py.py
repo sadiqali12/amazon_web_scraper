@@ -1,49 +1,103 @@
+import csv
+import time
+import random
 from crewai import Agent, Task, Crew
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-import time
+from webdriver_manager.chrome import ChromeDriverManager
 
-class WebAutomationAgent:
-    def search_google(self, query):
-        # Launch the browser
-        driver = webdriver.Chrome()
-        driver.get("https://www.google.com")
+class AmazonScraper:
+    def __init__(self, query="laptop", max_products=10, max_pages=2):
+        self.query = query
+        self.max_products = max_products
+        self.max_pages = max_pages
+        self.products_collected = 0
+        self.csv_filename = "amazon_products.csv"
 
-        # Search for the query
-        search_box = driver.find_element(By.NAME, "q")
-        search_box.send_keys(query)
-        search_box.send_keys(Keys.RETURN)
+    def setup_driver(self):
+        chrome_options = Options()
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_options.add_argument("--incognito")  
+        chrome_options.add_argument("start-maximized")
+        chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36")
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+        return driver
 
-        # Wait for results and get the first link
-        time.sleep(3)
-        first_result = driver.find_element(By.CSS_SELECTOR, "h3").text
+    def scrape_amazon(self):
+        driver = self.setup_driver()
+        url = f"https://www.amazon.in/s?k={self.query}"
+        driver.get(url)
+        time.sleep(random.uniform(3, 6))
+
+        with open(self.csv_filename, mode="w", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
+            writer.writerow(["Title", "Price", "Rating"])  
+
+            for page in range(1, self.max_pages + 1):
+                print(f"📄 Scraping Page {page}...")
+
+                elements = driver.find_elements(By.XPATH, "//div[@data-component-type='s-search-result']")
+                for elem in elements:
+                    if self.products_collected >= self.max_products:
+                        break  
+
+                    try:
+                        title = elem.find_element(By.TAG_NAME, "h2").text
+                    except:
+                        title = "N/A"
+
+                    try:
+                        price = elem.find_element(By.CLASS_NAME, "a-price-whole").text
+                    except:
+                        price = "N/A"
+
+                    try:
+                        rating = elem.find_element(By.CLASS_NAME, "a-icon-alt").text
+                    except:
+                        rating = "N/A"
+
+                    writer.writerow([title, price, rating])
+                    self.products_collected += 1
+
+                try:
+                    next_button = driver.find_element(By.XPATH, "//a[contains(@class, 's-pagination-next')]")
+                    if "disabled" in next_button.get_attribute("class"):
+                        print("🚨 No more pages available.")
+                        break  
+                    next_button.click()
+                    time.sleep(random.uniform(5, 8))
+                except:
+                    print("⚠️ Could not find Next Page button. Exiting...")
+                    break
 
         driver.quit()
-        return first_result
+        return f"✅ Successfully saved {self.products_collected} products to {self.csv_filename}!"
 
-# Create an AI agent in CrewAI
-web_agent = Agent(
-    role="Web Researcher",
-    goal="Search Google and find relevant information",
-    backstory="An expert at navigating the web and extracting useful details.",
+# CrewAI Agent
+amazon_agent = Agent(
+    role="Amazon Product Researcher",
+    goal="Find and extract product details from Amazon based on a given search query.",
+    backstory="An AI agent skilled in web scraping and data extraction, capable of searching Amazon for product details.",
     verbose=True,
     allow_delegation=False
 )
 
-# Define a task for the agent
-search_task = Task(
-    description="Use Selenium to search Google for 'Selenium Python' and return the top result.",
-    agent=web_agent,
-    expected_output="The title of the first search result"
+# CrewAI Task
+amazon_task = Task(
+    description="Scrape Amazon for 10 products related to 'laptop' and store their details in a CSV file.",
+    agent=amazon_agent,
+    expected_output="A CSV file containing product titles, prices, and ratings."
 )
 
-# Create the Crew
+# CrewAI Crew
 crew = Crew(
-    agents=[web_agent],
-    tasks=[search_task]
+    agents=[amazon_agent],
+    tasks=[amazon_task]
 )
 
-# Run the task
-result = crew.kickoff()
-print("🔍 Search Result:", result)
+# Run the CrewAI Task
+scraper = AmazonScraper(query="laptop", max_products=10, max_pages=2)
+result = scraper.scrape_amazon()
+print(result)
