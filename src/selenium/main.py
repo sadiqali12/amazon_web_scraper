@@ -19,7 +19,7 @@ driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), opti
 
 # Open Amazon
 query = "laptop"
-url = f"https://www.amazon.com/s?k={query}"
+url = f"https://www.amazon.in/s?k={query}"
 driver.get(url)
 
 # Wait for the page to load
